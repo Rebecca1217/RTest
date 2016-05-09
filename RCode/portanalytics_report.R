@@ -2,11 +2,31 @@ library(GCAMCPUB)
 library(data.table)
 library(dplyr)
 library(portanalytics)
+library(xtable)
 #library(sca) # to show data in percent style
 
 ###for past data testing, the equity_investment of PL_coming part was set to 0.0.
 #还需要修改的：+UGL的收益率，是Class_L1 = 'Equity' or if_fund = 1
 # 纠正格式的时候data.table要copy才能保证原来的不变
+#library(sca) # to show data in percent style
+
+#define the fmt function
+fmting <- function(x, unit, escape = FALSE, zero_fmt = "-") {
+  if (is.character(x)) return(x)
+  x <- switch(
+    unit,
+    "thousand" = GCAMCPUB::f_fmt(x / 1e3, digits = 0, zero_fmt = zero_fmt),
+    "mn" = GCAMCPUB::f_fmt(x / 1e6, digits = 2, zero_fmt = zero_fmt),
+    "pct" = GCAMCPUB::f_fmt_pct(x, digits = 2, zero_fmt = zero_fmt),
+    "bp" = paste(GCAMCPUB::f_fmt(x * 10000, digits = 0, zero_fmt = zero_fmt), "BP")
+  )
+  if (escape) {
+    stringr::str_replace_all(x, "\\%", "\\\\%")
+  } else {
+    x
+  }
+}
+
 
 db_mo <- GCAMCPUB::activate_conn(db_mo)
 nameseq = data.table(c('CNPC', 'Par', 'Life', 'Capital RMB',
@@ -70,7 +90,7 @@ UGL <- UGL[Port_Name != 'CNPC-UV',]
 ##target holding
 if(CurrentDate >= to_date('2016-01-01')) {
   sql <- "select Date, Port_Name, Target from PortMgt_SAA where SAA_Class = 'Domestic listed equities' and
-Date = ( select max( date ) from PortMgt_SAA where Date>='%s' )"
+  Date = ( select max( date ) from PortMgt_SAA where Date>='%s' )"
   sql <- sprintf(sql, DateFrom)
   TargetHolding <-
     dbGetQuery(db_mo, sql) %>%
@@ -79,7 +99,7 @@ Date = ( select max( date ) from PortMgt_SAA where Date>='%s' )"
     setkey(Port_Name)
 } else {
   sql <- "select Date, Port_Name, Target from PortMgt_SAA where SAA_Class = 'listed equity' and
-Date = ( select max( date ) from PortMgt_SAA where Date>='%s' and Date < '2016-01-01' )"
+  Date = ( select max( date ) from PortMgt_SAA where Date>='%s' and Date < '2016-01-01' )"
   sql <- sprintf(sql, DateFrom)
   TargetHolding <-
     dbGetQuery(db_mo, sql) %>%
@@ -177,9 +197,9 @@ yearreturn = function(table1, InputDate){
                YTM_PL := AV_Book_LC * ((1 + YTM_Book) ^ (as.numeric(DateTo - CurrentDate) / 365) - 1)]
     tmp <- tmp[if_YTM_Ast == TRUE & Maturity_Date_forYTM < DateTo,
                YTM_PL := AV_Book_LC * ((1 + YTM_Book) ^ (as.numeric(Maturity_Date_forYTM - 
-                                                            CurrentDate)/ 365) - 1)
+                                                                      CurrentDate)/ 365) - 1)
                + AV_Book_LC * ((1 + YTM_Book) ^ (as.numeric(Maturity_Date_forYTM - 
-                                                          CurrentDate)/ 365)) * 
+                                                              CurrentDate)/ 365)) * 
                  ((1 + yCash) ^ (as.numeric(DateTo - Maturity_Date_forYTM) / 365) - 1)]
     tmp <- tmp[Class_L3 %in% c('Cash', 'MMF'), Cash :=
                  AV_Book_LC * ((1 + yCash) ^ (as.numeric(DateTo - CurrentDate) / 365) - 1)]
@@ -218,7 +238,7 @@ yearreturn = function(table1, InputDate){
     if(substring(CurrentDate, 6, 10) != '12-31'){
       table1[Cost < 0 & abs(Cost) <= cost_basepoint * AVC_annual,
              CostComing := ((abs(Cost) - cost_basepoint * AVC_annual) - 
-                             abs((abs(Cost) - cost_basepoint * AVC_annual))) / 2]
+                              abs((abs(Cost) - cost_basepoint * AVC_annual))) / 2]
       table1[Cost < 0 & abs(Cost) > cost_basepoint * AVC_annual,
              CostComing := 0.0]
       table1[Cost >= 0, CostComing := - Cost -cost_basepoint * AVC_annual]
@@ -230,7 +250,7 @@ yearreturn = function(table1, InputDate){
   yearreturn <- select(Cost, Port_Name, AVC_annual, PL_LC, YTM_PL, Cash, Repo,
                        Equity_investment, CostComing, UGLTo)
   yearreturn <- yearreturn[, YR_Book := (PL_LC + YTM_PL + Cash + Repo + Equity_investment
-                                      + CostComing) / AVC_annual]
+                                         + CostComing) / AVC_annual]
   yearreturn <- yearreturn[, UGLplus := UGLTo / AVC_annual]
   yearreturn <- yearreturn[, YR_UGLplus := (PL_LC + YTM_PL + Cash + Repo + Equity_investment
                                             + CostComing + UGLTo) / AVC_annual]
@@ -308,37 +328,36 @@ Cost_based_fee <- REquity[Cost_based_fee, on = 'Port_Name']
 Cost_based_fee <- select(Cost_based_fee, Port_Name, AVC_annual, REquity, YR_Book, Fee_Book, 
                          YR_UGLplus, Fee_UGLplus)
 Cost_based_fee <- Cost_based_fee[nameseq, on = 'Port_Name']
+
 ## so far, Cost_based_fee is the final data for each Port of the cost based, then we need to 
 ## add some total info and give an easy-reading version of the result
 AVC_annual_sum <- sum(Cost_based_fee$AVC_annual)
 REquity_sum <- (sum(TargetHolding$PL_equity) + sum(TargetHolding$UGLTo)) / sum(TargetHolding$Targetshare)
 
 PL_Sum <- yearreturn(AVC_PL, CurrentDate)[, .(PL_sum = sum(PL_LC), YTM_PL_sum = sum(YTM_PL),
-                                 Cash_sum = sum(Cash), Repo_sum = sum(Repo),
-                                 Equity_invst_sum = sum(Equity_investment),
-                                 CostComing_sum = sum(CostComing), UGLTo_sum = sum(UGLTo)
-                                 )]
+                                              Cash_sum = sum(Cash), Repo_sum = sum(Repo),
+                                              Equity_invst_sum = sum(Equity_investment),
+                                              CostComing_sum = sum(CostComing), UGLTo_sum = sum(UGLTo)
+)]
 PL_Sum <- PL_Sum[, YR_Book := (PL_sum + YTM_PL_sum + Cash_sum + Repo_sum +
-                               Equity_invst_sum + CostComing_sum) / AVC_annual_sum]
+                                 Equity_invst_sum + CostComing_sum) / AVC_annual_sum]
 PL_Sum <- PL_Sum[, YR_UGLplus := (PL_sum + YTM_PL_sum + Cash_sum + Repo_sum +
-                                 Equity_invst_sum + CostComing_sum + UGLTo_sum) / AVC_annual_sum]
+                                    Equity_invst_sum + CostComing_sum + UGLTo_sum) / AVC_annual_sum]
 cost_sumup <- data.table(
   matrix(c('总计', AVC_annual_sum, REquity_sum, PL_Sum$YR_Book,
            sum(YR_Book$Fee_Book),PL_Sum$YR_UGLplus, sum(YR_UGLplus$Fee_UGLplus)),
-            ncol = 7, nrow = 1, byrow = TRUE)) %>%
+         ncol = 7, nrow = 1, byrow = TRUE)) %>%
   setnames(colnames(Cost_based_fee))
 Cost_based_fee_show <- rbind(Cost_based_fee, cost_sumup)
-# now the component of the table are all charaters
-Cost_based_fee_show <- local({
-  tmp <- Cost_based_fee_show[, REquity := na_fill(REquity, 0.0)]
-  tmp <- tmp[, AVC_annual := f_fmt(as.numeric(AVC_annual) / 1000000, 2, "-")]
-  tmp <- tmp[, Fee_Book := f_fmt(as.numeric(Fee_Book) / 1000000, 2, "-")]
-  tmp <- tmp[, Fee_UGLplus := f_fmt(as.numeric(Fee_UGLplus) / 1000000, 2, "-")]
-  tmp <- tmp[, REquity := f_fmt_pct(as.numeric(REquity), d = 2)]
-  tmp <- tmp[, YR_Book := f_fmt_pct(as.numeric(YR_Book), d = 2)]
-  tmp <- tmp[, YR_UGLplus := f_fmt_pct(as.numeric(YR_UGLplus), d = 2)]
-  tmp
-})
+##change the format of cost_based_fee_show use fmting function
+Cost_based_fee_show <- Cost_based_fee_show %>%
+  purrr::map_at(2:7, as.numeric) %>%
+  purrr::map_at(c(2, 5, 7), fmting, unit = "mn") %>%
+  purrr::map_at(c(3, 4, 6), fmting, unit = "pct") %>%
+  as.data.frame() %>%
+  setDT
+colnames(Cost_based_fee_show) <- c(" ", "平均成本", "权益调整项收益率", "预测账面收益率", 
+                                   "绩效管理费（账面）", "预测收益率（+UGL）", "绩效管理费（+UGL）")
 #Equity Adjusted Index
 AdjustedIndex <- local({
   AdjustedIndexFun = function(x, y){
@@ -399,9 +418,9 @@ UnitMarket_curr <- UnitMarket[Date %in% c(CurrentDate, DateFrom),
 UnitMarket_curr <- UnitMarket_curr[Date == CurrentDate, ] %>%
   setkey(UL_Class)
 Market_Number_curr <- data.table(c("Equity", "Balanced", "Bond"),
-                           c(UnitMarket_curr[UL_Class == 'Equity', .N],
-                             UnitMarket_curr[UL_Class == 'Balanced', .N],
-                             UnitMarket_curr[UL_Class == 'Bond', .N])) %>%
+                                 c(UnitMarket_curr[UL_Class == 'Equity', .N],
+                                   UnitMarket_curr[UL_Class == 'Balanced', .N],
+                                   UnitMarket_curr[UL_Class == 'Bond', .N])) %>%
   setnames(c("UL_Class", "Number")) %>%
   setkey(UL_Class)
 UnitMarket_curr <- Market_Number_curr[UnitMarket_curr]
@@ -424,21 +443,20 @@ Unit_sumup <- data.table(
 ) %>%
   setnames(colnames(Unit_linked_fee))
 Unit_linked_fee_show <- rbind(Unit_linked_fee, Unit_sumup)
-Unit_linked_fee_show <- local({
-  tmp <- Unit_linked_fee_show
-  tmp <- tmp[, AV_Mix_avg := f_fmt(as.numeric(AV_Mix_avg) / 1000000, 2, "-")]
-  tmp <- tmp[, proportion := f_fmt_pct(as.numeric(proportion), 2)]
-  tmp <- tmp[, Fee := f_fmt(as.numeric(Fee) / 1000000, 2, "-")]
-  tmp
-})
-
+Unit_linked_fee_show <- Unit_linked_fee_show %>%
+  purrr::map_at(c(2, 4, 5), as.numeric) %>%
+  purrr::map_at(2, fmting, 'mn') %>%
+  purrr::map_at(4, fmting, 'pct') %>%
+  as.data.frame() %>%
+  setDT
+colnames(Unit_linked_fee_show) <- c(" ", "平均资产", "最新排名", "排名百分比", "预计绩效管理费")
 YR_hs300 <- REquitybchmk[Date == CurrentDate, ]$Bchmk_Value /
   REquitybchmk[Date == DateFrom, ]$Bchmk_Value - 1
 
 ## show cost based portfolios' performance matrix
 ##组合管理跟踪简报——人民币成本组合
 YR_budget <- data.table(matrix(c(nameseq[Port_Name != 'Capital FX', ]$Port_Name, 
-  0.0517, 0.0496, 0.0559, 0.0524, 0.0495, 0.0539),6,2, byrow = F)) %>%
+                                 0.0517, 0.0496, 0.0559, 0.0524, 0.0495, 0.0539),6,2, byrow = F)) %>%
   setnames(c("Port_Name", "YR_budget"))
 perfmce_cb <- select(TargetHolding, Port_Name, Targetshare, REquity)[YR_diff, on = "Port_Name"]
 perfmce_cb <- select(yearreturn_current, Port_Name, UGLplus, 
@@ -448,14 +466,62 @@ perfmce_cb <- YR_budget[perfmce_cb, on = "Port_Name"]
 perfmce_cb <- perfmce_cb[nameseq, on = "Port_Name"]
 perfmce_cb[, YR_hs300 := YR_hs300]
 perfmce_cb <- perfmce_cb[Port_Name != "Capital FX", ]
+perfmce_cb <- select(perfmce_cb, Port_Name, AVC_annual, YR_Book_current, YR_diff,
+                     UGLplus, YR_UGLplus, YR_budget, REquity, YR_hs300) 
+##the final sum up col
+Total <- data.table(local({
+  Total_AVC_annual <- sum(AVC_annual[Port_Name != 'Capital FX', ]$AVC_annual)
+  Total_YR_Book <- (sum(AVC_PL[Port_Name != 'Capital FX', ]$PL) /
+                      sum(TargetHolding[Port_Name != 'Capital FX', ]$AVC_annual))
+  Total_YR_Diff <- (Total_YR_Book - sum(AVC_PL_former[Port_Name != 'Capital FX', ]$PL_LC) /
+                      sum(AVC_annual_former[Port_Name != 'Capital FX', ]$AVC_annual))
+  Total_UGLplus <- sum(yearreturn_current[Port_Name != 'Capital FX', ]$UGLTo) /
+    Total_AVC_annual
+  Total_YR_UGLplus <- sum(perfmce_cb[Port_Name != 'Capital FX', ]$YR_UGLplus *
+                            perfmce_cb[Port_Name != 'Capital FX', ]$AVC_annual) /
+    sum(TargetHolding[Port_Name != 'Capital FX', ]$AVC_annual)
+  Total_YR_Budget <- 0.0517
+  Total_REquity <- (sum(TargetHolding$PL_equity) + sum(TargetHolding$UGLTo)) / sum(TargetHolding$Targetshare)
+  Total_hs300 <- 0.0558
+  t(c('Total', Total_AVC_annual, Total_YR_Book, Total_YR_Diff, Total_UGLplus, Total_YR_UGLplus,
+      Total_YR_Budget, Total_REquity, Total_hs300))
+}))
+## combine with the sum-up and adjust the numbers format
+colnames(Total) <- colnames(perfmce_cb)
+perfmce_cb <- perfmce_cb %>%
+  purrr::map_at(7, as.numeric) %>%
+  purrr::map_at(2, fmting, unit = "thousand") %>%
+  purrr::map_at(3:9, fmting, unit = "pct") %>%
+  setDT
+Total <- Total %>%
+  purrr::map_at(2:9, as.numeric) %>%
+  purrr::map_at(2, fmting, unit = "thousand") %>%
+  purrr::map_at(3:9, fmting, unit = "pct") %>%
+  setDT()
+perfmce_cb <- rbind(perfmce_cb, Total)
+perfmce_cb.t <- t(perfmce_cb)
+colnames(perfmce_cb.t) <- perfmce_cb.t[1, ]
+perfmce_cb.t <- perfmce_cb.t[-1, ]
+perfmce_cb.t <- cbind(c('年化平均成本', '年化账面收益率', '收益率变化（上月底）', 
+                        '权益及基金UGL', '账面收益率(+UGL)', '预算收益率', 
+                        '权益调整项收益率', '沪深300收益率'), perfmce_cb.t) 
+colnames(perfmce_cb.t)[1] <- ' '
+rownames(perfmce_cb.t) <- NULL
+# perfmce_cb.t <- perfmce_cb.t %>%
+#   data.table %>%
+#   purrr::map_at(2:8, as.numeric) %>%
+#   purrr::map_at(2:8, fmting, unit = "pct") %>%
+#   setDT
+
+
 ##show unit linked porfolios' performance 
 ##组合管理跟踪简报—投连组合
 ##current month data stored in UnitMarkte_curr
 Unitholding_curr <- local({
   Market_median <- data.table(c("Equity", "Balanced", "Bond"),
-                                     c(UnitMarket_curr[UL_Class == 'Equity', .(median = median(Yield))],
-                                       UnitMarket_curr[UL_Class == 'Balanced', .(median = median(Yield))],
-                                       UnitMarket_curr[UL_Class == 'Bond', .(median = median(Yield))])) %>%
+                              c(UnitMarket_curr[UL_Class == 'Equity', .(median = median(Yield))],
+                                UnitMarket_curr[UL_Class == 'Balanced', .(median = median(Yield))],
+                                UnitMarket_curr[UL_Class == 'Bond', .(median = median(Yield))])) %>%
     setnames(c("UL_Class", "Median")) 
   tmp <- UnitMarket_curr[UL_Code %in% ULMatchTable$UL_Code, ]
   tmp <- ULMatchTable[tmp, on = "UL_Code"]
@@ -467,7 +533,7 @@ Unitholding_curr <- local({
 })
 Unitholding_former <- local({
   tmp <- UnitMarket[Date %in% c(FormerDate, DateFrom_Former),
-             Yield := Unit_Price / shift(Unit_Price, 1L) - 1, by = UL_Name]
+                    Yield := Unit_Price / shift(Unit_Price, 1L) - 1, by = UL_Name]
   tmp <- tmp[Date == FormerDate, ] %>%
     setkey(UL_Class)
   Market_Number_former <- data.table(c("Equity", "Balanced", "Bond"),
@@ -484,8 +550,19 @@ Unitholding_former <- local({
     select(Port_Name, Rank_paste_former)
   tmp
 })
-Perfmce_ul <- Unitholding_former[Unitholding_curr, on = "Port_Name"]
-Perfmce_ul <- Perfmce_ul[nameseq_UL, on = "Port_Name"] %>%
+perfmce_ul <- Unitholding_former[Unitholding_curr, on = "Port_Name"]
+perfmce_ul <- perfmce_ul[nameseq_UL, on = "Port_Name"] %>%
   select(Port_Name, Rank_paste_curr, Rank_paste_former, Yield, Median)
-Perfmce_ul[, Yield := f_fmt_pct(Yield, d = 2, "-")]
-Perfmce_ul[, Median := f_fmt_pct(Median, d = 2, "-")]
+perfmce_ul[, Yield := f_fmt_pct(Yield, d = 2, "-")]
+perfmce_ul[, Median := f_fmt_pct(Median, d = 2, "-")]
+perfmce_ul.t <- t(perfmce_ul)[-1, ]
+colnames(perfmce_ul.t) <- perfmce_ul$Port_Name
+perfmce_ul.t <- cbind(c('当前排名', '上月排名', '收益率', '中位收益率'), perfmce_ul.t)
+colnames(perfmce_ul.t)[1] <- " "
+rownames(perfmce_ul.t) <- NULL
+
+f_rnw2pdf("E:/RWD/RTest/Rcode/portMgtTrakingRpt.Rnw",
+          "C:/Users/AMC161/Desktop/portMgtTrakingRpt.pdf")
+f_rnw2pdf("E:/RWD/RTest/Rcode/mgtFeeForecast.Rnw",
+          "C:/Users/AMC161/Desktop/mgtFeeForecast.pdf")
+

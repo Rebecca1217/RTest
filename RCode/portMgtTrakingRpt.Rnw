@@ -1,0 +1,138 @@
+\documentclass[a4paper, fancyhdr,cap]{ctexart}
+\usepackage[myheadings]{fullpage}
+\usepackage{cmap}
+\usepackage{colortbl}
+\usepackage{color}
+\usepackage{times}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{multicol}
+\usepackage{pdfpages}
+\usepackage{array}
+\usepackage[norule]{footmisc}
+\usepackage[usenames,dvipsnames]{xcolor}
+\usepackage[pdfstartview=Fit, bookmarks=true, bookmarksopen = true, bookmarksnumbered = false, CJKbookmarks=true, colorlinks=true, pdfpagelayout = OneColumn]{hyperref}
+\usepackage{pdflscape}
+\usepackage{fontspec}
+% \renewcommand*\rmdefault{ppl}
+\CTEXsetup[
+number={\chinese{section}},
+format={\zihao{3}\raggedright},
+beforeskip={10pt},afterskip={10pt}]{section}
+\CTEXsetup[
+number={\Roman{subsection}},
+format={\zihao{4}},
+beforeskip={15pt},afterskip={5pt}]{subsection}
+
+\renewcommand{\footnotesize}{\fontsize{11}{13}}
+
+% \newcommand{\specialcell}[2][c]{%
+%   \begin{tabular}[#1]{@{}l@{}}#2\end{tabular}}
+
+<<setting,include=FALSE,cache=FALSE,>>=
+library(knitr)
+opts_chunk$set(
+  fig.align = 'center',
+  fig.show = 'asis',
+  cache = TRUE,
+  message = FALSE,
+  echo = FALSE,
+  results = 'asis',
+  fig.keep = 'all',
+  warning = FALSE,
+  fig.width = 7,
+  fig.height = 3.5,
+  dpi = 72,
+  dev = "cairo_pdf",
+  error = TRUE
+  )
+# if (.Platform$OS.type != "windows")
+  # opts_chunk$set(dev = "quartz_pdf")
+options(
+  xtable.floating = FALSE,
+  xtable.booktabs = TRUE,
+  xtable.type = "latex",
+  xtable.caption.placement = "top",
+  xtable.table.placement = "!h",
+  xtable.tabular.environment = "longtable",
+  xtable.include.rownames = FALSE,
+  xtable.NA.string = ""
+  )
+# old_theme <- theme_get()
+# theme_set(theme_tan_prefer(
+#   base_family = "wqy-microhei",
+#   base_size = 12,
+#   if_legend_top = TRUE
+# ))
+@
+
+
+
+<<report_type>>=
+## report type ##
+rpt_title <- paste0("组合管理跟踪简报(", format(CurrentDate, "%Y.%m.%d"),")")
+if_eval <- TRUE
+opts_chunk$set(fig.width = 7, fig.height = 4.0)
+@
+
+\definecolor{lightgreen}{rgb}{0.56, 0.93, 0.56}
+\addtolength{\voffset}{-0.6in}
+\addtolength{\textheight}{0.9in}
+% \addtolength{\marginparwidth}{-0.5in}
+\renewcommand{\headheight}{0.5in}
+\renewcommand{\headrulewidth}{1.0pt}
+\renewcommand{\footrulewidth}{1.0pt}
+\renewcommand{\headsep}{20pt}
+\setlength{\headwidth}{\textwidth}
+\fancyhead[L]{
+\parbox{0.49\textwidth}{
+\fontsize{12}{16} \Sexpr{rpt_title}}}
+\fancyhead[R]{
+\parbox{0.50\textwidth}{
+\raggedleft \includegraphics[
+height=0.5in,keepaspectratio=true]{\Sexpr{GCAMCPUB::logo_path("full_white_bg")}}}
+}
+\fancyfoot[LF]{Generali China Asset Management CO. LTD}
+\cfoot{}
+\rfoot{Page \thepage}
+\pagestyle{fancy}
+\renewcommand*{\familydefault}{\sfdefault} % set the default font to arial-like, instead of time new rome like.
+
+\begin{document}
+%\SweaveOpts{concordance=TRUE}
+\kaishu
+\zihao{6}
+\definecolor{light-gray}{gray}{0.95}
+% \pagecolor{light-gray}
+% \includepdf[noautoscale=true,offset=0 -1cm]{D:/R/MO/PortMgt/QuantModels/Quant_Implication/quantitative_strategy_report_cover.pdf}
+\section{组合表现}
+%\iffalse
+\subsection{人民币成本组合（单位：百万元人民币)}
+<<perfmce_cb>>=
+tbAlign <- c("l", "l", rep("r", ncol(perfmce_cb.t) - 1))
+perfmce_cb.t %>%
+ xtable(., align = tbAlign) %>%
+ print.xtable(
+   .,
+    add.to.row = list(
+     pos = list(nrow(perfmce_cb.t) - 5),
+     command = " \\midrule \\rowcolor[gray]{0.9} \n"
+     )
+   )
+@
+*注：1、当日上证指数点位为：。2、假设：今年管道计划剩余分红率；保持当前回购仓位不变；未来回购平均成本4.50\%；流动性部分年化收益3.00\%；年度平均费用为0BP；假设债基收益为0；债券浮盈浮亏不考虑。
+%\fi
+\subsection{投连组合}
+<<perfmce_ul>>=
+tbAlign <- c("l", "l", rep("r", ncol(perfmce_ul.t) - 1))
+perfmce_ul.t %>%
+ xtable(., align = tbAlign) %>%
+ print.xtable(
+   # .,
+   # add.to.row = list(
+   #   pos = list(nrow(perfmce_ul) - 1),
+   #   command = " \\midrule \\rowcolor[gray]{0.9} \n"
+   #  )
+   )
+@
+\end{document}
