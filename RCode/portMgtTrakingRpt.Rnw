@@ -8,6 +8,7 @@
 \usepackage{booktabs}
 \usepackage{multicol}
 \usepackage{pdfpages}
+\usepackage{makecell}
 \usepackage{array}
 \usepackage[norule]{footmisc}
 \usepackage[usenames,dvipsnames]{xcolor}
@@ -26,8 +27,8 @@ beforeskip={15pt},afterskip={5pt}]{subsection}
 
 \renewcommand{\footnotesize}{\fontsize{11}{13}}
 
-% \newcommand{\specialcell}[2][c]{%
-%   \begin{tabular}[#1]{@{}l@{}}#2\end{tabular}}
+%\newcommand{\specialcell}[2][c]{%
+%  \begin{tabular}[#1]{@{}l@{}}#2\end{tabular}}
 
 <<setting,include=FALSE,cache=FALSE,>>=
 library(knitr)
@@ -101,18 +102,30 @@ height=0.5in,keepaspectratio=true]{\Sexpr{GCAMCPUB::logo_path("full_white_bg")}}
 \begin{document}
 %\SweaveOpts{concordance=TRUE}
 \kaishu
-\zihao{6}
+\zihao{5}
 \definecolor{light-gray}{gray}{0.95}
+% \newcommand{\tablecell}[2]{
+%       \begin{tabular}
+%       {@{}#1@{}}#2
+%         \end{tabular}}
 % \pagecolor{light-gray}
 % \includepdf[noautoscale=true,offset=0 -1cm]{D:/R/MO/PortMgt/QuantModels/Quant_Implication/quantitative_strategy_report_cover.pdf}
 \section{组合表现}
-%\iffalse
 \subsection{人民币成本组合（单位：百万元人民币)}
 <<perfmce_cb>>=
 tbAlign <- c("l", "l", rep("r", ncol(perfmce_cb.t) - 1))
+#tbAlign <- rep("c", ncol(perfmce_cb.t) + 1)
+#tbAlign <- c("p{1cm}", "p{3.5cm}", rep("p{1.5cm}", ncol(perfmce_cb.t) - 1))
+colnames(perfmce_cb.t) <- c(" ", "CNPC", "Par", "Life",
+                            "\\makecell{Capital \\\\ RMB}",
+                            "\\makecell{UV\\\\Individual}",
+                            "\\makecell{UV\\\\Group}",
+                            "Total")
+#cat(colnames(perfmce_cb.t))
 perfmce_cb.t %>%
- xtable(., align = tbAlign) %>%
+ xtable(align = tbAlign) %>%
  print.xtable(
+   sanitize.colnames.function = function(x) x,
    .,
     add.to.row = list(
      pos = list(nrow(perfmce_cb.t) - 5),
@@ -120,8 +133,7 @@ perfmce_cb.t %>%
      )
    )
 @
-*注：1、当日上证指数点位为：。2、假设：今年管道计划剩余分红率；保持当前回购仓位不变；未来回购平均成本4.50\%；流动性部分年化收益3.00\%；年度平均费用为0BP；假设债基收益为0；债券浮盈浮亏不考虑。
-%\fi
+*注：1、当日上证指数点位为：\Sexpr{shIndex}。2、假设：今年管道计划剩余分红率0.00\%；保持当前回购仓位不变；未来回购平均成本4.50\%；流动性部分年化收益3.00\%；年度平均费用为0BP；假设债基收益为0；债券浮盈浮亏不考虑。
 \subsection{投连组合}
 <<perfmce_ul>>=
 tbAlign <- c("l", "l", rep("r", ncol(perfmce_ul.t) - 1))

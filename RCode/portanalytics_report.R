@@ -110,7 +110,7 @@ if(CurrentDate >= to_date('2016-01-01')) {
 
 ##REquity Benchmark
 sql <- "select Date, Bchmk_Name, Bchmk_Value from bchMK
-where Bchmk_Code = '000300' and Date in ('%s','%s')"
+where Bchmk_Code in ('000300', '000001') and Date in ('%s','%s')"
 sql <- sprintf(sql, DateFrom, CurrentDate)
 REquitybchmk <-
   dbGetQuery(db_mo, sql) %>%
@@ -370,8 +370,8 @@ AdjustedIndex <- local({
         0
     }
   }
-  REbchmk <- REquitybchmk[Date == CurrentDate, ]$Bchmk_Value /
-    REquitybchmk[Date == DateFrom, ]$Bchmk_Value - 1
+  REbchmk <- REquitybchmk[Date == CurrentDate & Bchmk_Name == '沪深300', ]$Bchmk_Value /
+    REquitybchmk[Date == DateFrom & Bchmk_Name == '沪深300', ]$Bchmk_Value - 1
   REbchmk <- min(0.35, max(REbchmk, -0.15))
   EREquity <- REquity_sum - REbchmk
   AdjustedIndexFun(REquity_sum, EREquity)
@@ -450,8 +450,8 @@ Unit_linked_fee_show <- Unit_linked_fee_show %>%
   as.data.frame() %>%
   setDT
 colnames(Unit_linked_fee_show) <- c(" ", "平均资产", "最新排名", "排名百分比", "预计绩效管理费")
-YR_hs300 <- REquitybchmk[Date == CurrentDate, ]$Bchmk_Value /
-  REquitybchmk[Date == DateFrom, ]$Bchmk_Value - 1
+YR_hs300 <- REquitybchmk[Date == CurrentDate & Bchmk_Name == '沪深300', ]$Bchmk_Value /
+  REquitybchmk[Date == DateFrom & Bchmk_Name == '沪深300', ]$Bchmk_Value - 1
 
 ## show cost based portfolios' performance matrix
 ##组合管理跟踪简报——人民币成本组合
@@ -507,6 +507,8 @@ perfmce_cb.t <- cbind(c('年化平均成本', '年化账面收益率', '收益�
                         '权益调整项收益率', '沪深300收益率'), perfmce_cb.t) 
 colnames(perfmce_cb.t)[1] <- ' '
 rownames(perfmce_cb.t) <- NULL
+shIndex <- REquitybchmk[Bchmk_Name == '上证综指' & Date == CurrentDate]$Bchmk_Value %>%
+  f_fmt(, digits = 2)
 # perfmce_cb.t <- perfmce_cb.t %>%
 #   data.table %>%
 #   purrr::map_at(2:8, as.numeric) %>%
@@ -562,7 +564,7 @@ colnames(perfmce_ul.t)[1] <- " "
 rownames(perfmce_ul.t) <- NULL
 
 f_rnw2pdf("E:/RWD/RTest/Rcode/portMgtTrakingRpt.Rnw",
-          "C:/Users/AMC161/Desktop/portMgtTrakingRpt.pdf")
+          "C:/Users/AMC161/Desktop/portMgtTrakingRpt.pdf", if_show = T)
 f_rnw2pdf("E:/RWD/RTest/Rcode/mgtFeeForecast.Rnw",
           "C:/Users/AMC161/Desktop/mgtFeeForecast.pdf")
 
