@@ -8,7 +8,7 @@
 \usepackage{booktabs}
 \usepackage{multicol}
 \usepackage{pdfpages}
-\usepackage{makecell}
+% \usepackage{makecell}
 \usepackage{array}
 \usepackage[norule]{footmisc}
 \usepackage[usenames,dvipsnames]{xcolor}
@@ -18,11 +18,11 @@
 % \renewcommand*\rmdefault{ppl}
 \CTEXsetup[
 number={\chinese{section}},
-format={\zihao{3}\raggedright},
+format={\zihao{4}\raggedright},
 beforeskip={10pt},afterskip={10pt}]{section}
 \CTEXsetup[
 number={\Roman{subsection}},
-format={\zihao{4}},
+format={\zihao{5}},
 beforeskip={15pt},afterskip={5pt}]{subsection}
 
 \renewcommand{\footnotesize}{\fontsize{11}{13}}
@@ -71,7 +71,7 @@ options(
 
 <<report_type>>=
 ## report type ##
-rpt_title <- paste0("组合管理跟踪简报(", format(CurrentDate, "%Y.%m.%d"),")")
+rpt_title <- paste0("组合管理跟踪简报(截至", format(dateCurrent, "%Y年%m月%d日"),")")
 if_eval <- TRUE
 opts_chunk$set(fig.width = 7, fig.height = 4.0)
 @
@@ -102,7 +102,7 @@ height=0.5in,keepaspectratio=true]{\Sexpr{GCAMCPUB::logo_path("full_white_bg")}}
 \begin{document}
 %\SweaveOpts{concordance=TRUE}
 \kaishu
-\zihao{5}
+\zihao{-5}
 \definecolor{light-gray}{gray}{0.95}
 % \newcommand{\tablecell}[2]{
 %       \begin{tabular}
@@ -110,41 +110,130 @@ height=0.5in,keepaspectratio=true]{\Sexpr{GCAMCPUB::logo_path("full_white_bg")}}
 %         \end{tabular}}
 % \pagecolor{light-gray}
 % \includepdf[noautoscale=true,offset=0 -1cm]{D:/R/MO/PortMgt/QuantModels/Quant_Implication/quantitative_strategy_report_cover.pdf}
-\section{组合表现}
+\section{中意人寿组合表现}
 \subsection{人民币成本组合（单位：百万元人民币)}
-<<perfmce_cb>>=
-tbAlign <- c("l", "l", rep("r", ncol(perfmce_cb.t) - 1))
-#tbAlign <- rep("c", ncol(perfmce_cb.t) + 1)
-#tbAlign <- c("p{1cm}", "p{3.5cm}", rep("p{1.5cm}", ncol(perfmce_cb.t) - 1))
-colnames(perfmce_cb.t) <- c(" ", "CNPC", "Par", "Life",
-                            "\\makecell{Capital \\\\ RMB}",
-                            "\\makecell{UV\\\\Individual}",
-                            "\\makecell{UV\\\\Group}",
-                            "Total")
-#cat(colnames(perfmce_cb.t))
-perfmce_cb.t %>%
+<<costBased>>=
+costBased <- costBased %>%
+  purrr::map_at(2:13, as.numeric) %>%
+  purrr::map_at(2, fmting, unit = "mn") %>%
+  purrr::map_at(3:13, fmting, unit = "pct") %>%
+  setDT %>%
+  select(-Item)
+costBased <- t(costBased) %>%
+  as.data.table() %>%
+  setnames(portOrder$Item)
+costBased <- cbind(
+  data.table(Item = c("YTD平均成本", "YTD收益率", "本月收益率",
+                      "YTD综合收益率", "权益及债基综合收益率",
+                      "预算收益率", "年化账面收益率", "权益调整项收益率", 
+                      "沪深300收益率", "+权益及债基UL", "+权益及债基UG",
+                      "+权益及债基UGL")), costBased
+)
+tbAlign <- c("l", "l", 
+             rep(">{\\raggedleft\\arraybackslash}m{0.5in}", 4),
+             ">{\\raggedleft\\arraybackslash}m{0.6in}",
+             rep(">{\\raggedleft\\arraybackslash}m{0.5in}", 2)
+             )
+colnames(costBased) <- c(" ", "CNPC", "Par", "Life",
+                            "Capital RMB", "UV Individual",
+                            "UV Group","Total")
+costBased %>%
  xtable(align = tbAlign) %>%
  print.xtable(
-   sanitize.colnames.function = function(x) x,
+   #sanitize.colnames.function = function(x) x,
    .,
-    add.to.row = list(
-     pos = list(nrow(perfmce_cb.t) - 5),
-     command = " \\midrule \\rowcolor[gray]{0.9} \n"
-     )
+   add.to.row = list(
+     pos = list(nrow(costBased) - 9,
+                nrow(costBased) - 3,
+                nrow(costBased) - 6),
+     command = c(" \\midrule \n",
+                 " \\midrule \n",
+                 " \\rowcolor{yellow} \n"
+                 )
+   )
    )
 @
-*注：1、当日上证指数点位为：\Sexpr{shIndex}。2、假设：今年管道计划剩余分红率0.00\%；保持当前回购仓位不变；未来回购平均成本4.50\%；流动性部分年化收益3.00\%；年度平均费用为0BP；假设债基收益为0；债券浮盈浮亏不考虑。
-\subsection{投连组合}
-<<perfmce_ul>>=
-tbAlign <- c("l", "l", rep("r", ncol(perfmce_ul.t) - 1))
-perfmce_ul.t %>%
- xtable(., align = tbAlign) %>%
+ *注：1、当日上证指数点位为：\Sexpr{shIndex}。2、假设：招商局轮船股权投资年平均收益率3\%；中石油管道平台公司年平均收益率3.9\%；保持当前回购仓位不变；未来回购平均成本2.50\%；流动性部分年化收益2.00\%；假设债基收益为4.5\%；年度平均费用为20BP。
+ 
+\subsection{外币资本金组合}
+
+<<Capital FX>>=
+capitalFX <- capitalFX %>%
+  purrr::map_at(2:3, fmting, unit = "pct") %>%
+  setDT()
+tbAlign <- c("l", "l", "c", "c")
+capitalFX %>%
+ xtable(align = tbAlign) %>%
  print.xtable(
-   # .,
-   # add.to.row = list(
-   #   pos = list(nrow(perfmce_ul) - 1),
-   #   command = " \\midrule \\rowcolor[gray]{0.9} \n"
-   #  )
+   #sanitize.colnames.function = function(x) x,
+   .,
+   add.to.row = NULL
    )
 @
+*注：假设到年底人民币汇率不变；债券基金收益4.5\%。
+
+\subsection{投连组合}
+
+<<unitLinked>>=
+portOrder <- data.table(Item = c("UL Stable", "UL Anyi", "UL Increase",
+                                 "UL Strategy", "UL Aggressive"))
+unitLinked <- rank[portOrder, on = "Item"]
+unitLinked <- unitLinked %>%
+  purrr::map_at(4:5, fmting, unit = "pct") %>%
+  setDT %>%
+  select(-Item)
+unitLinked <- t(unitLinked) %>%
+  as.data.table() %>%
+  setnames(portOrder$Item)
+unitLinked <- cbind(
+  data.table(Item = c("当前排名", "上月排名", "收益率", "中位收益率")), unitLinked)
+colnames(unitLinked) <- c(" ", portOrder$Item)
+tbAlign <- c("l", "l", 
+             rep(">{\\raggedleft\\arraybackslash}m{0.6in}", 2),
+             rep(">{\\raggedleft\\arraybackslash}m{0.7in}", 2),
+             ">{\\raggedleft\\arraybackslash}m{0.9in}"
+             )
+unitLinked %>%
+ xtable(align = tbAlign) %>%
+ print.xtable(
+   #sanitize.colnames.function = function(x) x,
+   .,
+   add.to.row = list(
+     pos = list(nrow(unitLinked) - 2),
+     command = c(" \\midrule \n")
+   )
+   )
+@
+ *投连数据截止日期为：\Sexpr{dateCurrent}。
+
+\newpage
+\section{自有资本金组合表现}
+
+<<AMC Capital>>=
+amcCapital <- amcCapital %>%
+  purrr::map_at(1:2, fmting, unit = "pct") %>%
+  setDT()
+amcCapital <- cbind(
+  data.table(c("YTD", "年化")), amcCapital)
+colnames(amcCapital) <- c(" ", "账面收益率", "综合收益率")
+tbAlign <- c("l", "l", "c", "c")
+amcCapital %>%
+ xtable(align = tbAlign) %>%
+ print.xtable(
+   #sanitize.colnames.function = function(x) x,
+   .,
+   add.to.row = NULL
+   )
+@
+
+
+\section{第三方组合表现}
+
+
 \end{document}
+
+
+
+
+
+
