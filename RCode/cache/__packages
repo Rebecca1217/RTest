@@ -1,8 +1,0 @@
-base
-GCAMCPUB
-data.table
-dplyr
-portanalytics
-DBI
-xtable
-knitr
