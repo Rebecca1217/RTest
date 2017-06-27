@@ -1,0 +1,6 @@
+Port_Name,Equity_w,FI_w,Liquidity_w
+UL Stable,0.05,0.9,0.05
+UL Anyi,0.05,0.9,0.05
+UL Increase,0.4,0.55,0.05
+UL Strategy,0.4,0.55,0.05
+UL Aggressive,0.8,0.15,0.05
