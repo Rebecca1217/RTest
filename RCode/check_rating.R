@@ -2,8 +2,10 @@
 # Since the DW data coming from HengTai rating system, so the rating update will be more timely.
 # amdw.v_dw_rating_i is a view, amdw.dw_rating_i is a real table
 
+
 # NOTE!!!!!!!!!
 # the rating of non-standard products from DW are wrong, which should be told to IT if having time.
+
 
 # pkgs --------------------------------------------------------------------
 
@@ -14,6 +16,7 @@ library(data.table)
 # paras -------------------------------------------------------------------
 
 tgt_date <- as.Date("2017-11-30")
+
 # fetch rating data from oracle
 get_dw <- (function(){
   db_dw <- activate_conn("db_dw")
@@ -31,6 +34,7 @@ get_dw <- (function(){
   internal_bond <- internal[R_TYPE == "BI", .(TCODE, TNAME, CR, ISSUER_NAME, ISSUER_CODE,
                                               BDATE, EDATE)] %>%
     setnames("TCODE", "Sec_Code")
+
   internal_bond[, Tgt_Date := BDATE]
   
   internal_bond_unique <- unique(internal_bond[, .(Sec_Code, TNAME, ISSUER_NAME,
@@ -85,6 +89,7 @@ dw_null <- check_bond[is.na(TNAME) & is.na(CR)]
 inconsis <- check_bond[!is.na(CR) & CR != Rating_Internal & 
                          ! (CR == "risk free" & Rating_Internal == "Risk_free")]
 write_open_xlsx(unique(inconsis))
+
 
 
 # Note: HTZNTD.IB, TKQJNY.IB
