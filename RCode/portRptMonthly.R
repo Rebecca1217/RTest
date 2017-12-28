@@ -2,10 +2,11 @@ library(portanalytics)
 library(data.table)
 library(GCAMCPUB)
 library(DBI)
-readFromLdc(c("201612", "201706"), 
-            c("All cost based", "Third party", "Unit linked"), 
+# 2015年之前境内境外SAA是不分的
+readFromLdc(c("201612", "201711"), 
+            c("All cost based", "Third party"), 
             jyDateRange = NULL)
-dateBased <- as.Date("2017-06-15")
+dateBased <- as.Date("2017-11-23")
 dateFrom<- as.Date("2016-12-31")
 classEQ <- c("Active fund", "Stock", "Index fund", "REITs", "IAMP-Stock", "Equity future")
 pos <- dataCenter$pos[Date %in% c(dateBased, dateFrom)]
@@ -16,8 +17,9 @@ sql <- "select HS_Port_Code, if_FC_HS_Port from CORE_para_Port"
 portInfo <- dbGetQuery(myConn, sql) %>%
   setDT()
 sql <- "select Port_Name, SAA_Class, Target from PortMgt_SAA where Date > '%s' and
-SAA_Class in ('Listed equities', 'Domestic listed equities', 'Overseas listed equities')"
-sql <- sprintf(sql, dateFrom)
+SAA_Class in ('Listed equities', 'Domestic listed equities', 'Overseas listed equities')
+and Date <= '%s'"
+sql <- sprintf(sql, dateFrom, dateBased)
 saaTarget <- dbGetQuery(myConn, sql) %>%
   setDT
 dbDisconnect(myConn)
@@ -79,7 +81,8 @@ ytm <- local({
 
 # Equity Update -----------------------------------------------------------
 
-
+port_order <- data.table(Port_Name = c("CNPC", "Par", "Life", "Capital RMB",
+                                       "UV Individual", "UV Group", "Total"))
 # add if_FC to pos --------------------------------------------------------
 
 equityAlloc <- local({
@@ -122,6 +125,8 @@ equityAlloc <- local({
     AV_EQ_FC = NULL
   )]
   equityAlloc <- rbindlist(list(allocEQ, addRow))
+  stopifnot(nrow(equityAlloc) == nrow(port_order))
+  equityAlloc <- equityAlloc[port_order, on = "Port_Name"]
   equityAlloc
 })
 
@@ -201,6 +206,8 @@ equityAdj <- local({
     EQ_Adj_Total = (PL_Dom + UGL_Chg_Dom + PL_Overs + UGL_Chg_Overs) / Total
   )]
   eqAdj <- rbindlist(list(eqAdj, addRow), use.names = TRUE)
+  eqAdj <- eqAdj[port_order, on = "Port_Name"]
+  eqAdj
 })
 # equity Adjusted Rtn(not considering HK Anxin lookthrough) ---------------
 
@@ -215,3 +222,85 @@ equityRtn <- equityAdjRtn(ports = ports, dates = c(dateFrom, dateBased), ts = FA
 
 write_open_xlsx(ulRank(c(dateFrom, dateBased)))
 
+
+# equityAdj  original Currency --------------------------------------------
+
+# AVC 没有调整那个调起来太麻烦了，感觉算那么精确意义不大
+
+equityAdj <- local({
+  uglChg <- local({
+    posUGL <- copy(pos)[, .(Date, HS_Port_Code, Sec_Code, Sec_Name, UGL_OC, Class_L3)]
+    posUGL <- portInfo[posUGL, on = "HS_Port_Code"]
+    posUGL[if_FC_HS_Port == TRUE | 
+             Sec_Code %in% c("990045.IB", "990025.IB", "004091.OF", "519139.OF"),
+           if_FC := 1]
+    posUGL[, if_FC := GCAMCPUB::na_fill(if_FC, 0)]
+    attachHSPortInfo(posUGL, c("Port_Name", "Port_Type"))
+    posUGL <- posUGL[Port_Type == "Cost based" & Class_L3 %in% classEQ]
+    uglEnd <- posUGL[Date == dateBased, 
+                     .(UGL_End = sum(UGL_OC)),
+                     .(Port_Name, if_FC, Date)] %>%
+      dcast(Port_Name + Date ~ if_FC, fun = sum, value.var = "UGL_End") %>%
+      setnames(c("Port_Name", "Date_End", "Dom_End", "Overs_End"))
+    uglFrom <- posUGL[Date == dateFrom, 
+                      .(UGL_End = sum(UGL_OC)),
+                      .(Port_Name, if_FC, Date)] %>%
+      dcast(Port_Name + Date ~ if_FC, fun = sum, value.var = "UGL_End") %>%
+      setnames(c("Port_Name", "Date_From", "Dom_From", "Overs_From"))
+    uglChg <- uglFrom[uglEnd, on = "Port_Name"]
+    uglChg[, `:=`(
+      UGL_Chg_Dom = Dom_End - Dom_From,
+      UGL_Chg_Overs = Overs_End - Overs_From
+    )]
+    uglChg[, .(Port_Name, UGL_Chg_Dom, UGL_Chg_Overs)]
+  })
+  pl <- local({
+    pl <- dataCenter$pl[Date > dateFrom & Date <= dateBased]
+    pl <- portInfo[pl, on = "HS_Port_Code"]
+    pl[if_FC_HS_Port == TRUE | 
+         Sec_Code %in% c("990045.IB", "990025.IB", "004091.OF", "519139.OF"),
+       if_FC := 1]
+    pl[, if_FC := GCAMCPUB::na_fill(if_FC, 0)]
+    attachHSPortInfo(pl, c("Port_Name", "Port_Type"))
+    pl <- pl[Port_Type  == "Cost based" & Class_L3 %in% classEQ]
+    pl <- pl[, .(PL = sum(PL_OC)), .(Port_Name, if_FC)] %>%
+      dcast(Port_Name ~ if_FC, fun = sum, value.var = "PL") %>%
+      setnames(c("Port_Name", "PL_Dom", "PL_Overs"))
+    pl
+  })
+  eqPos <- local({
+    ports <- paPorts(as.list(c("CNPC", "Par", "Life", "Capital RMB", "UV Individual",
+                               "UV Group", "All cost based")),
+                     names = c("CNPC", "Par", "Life", "Capital RMB","UV Individual", 
+                               "UV Group", "Total"))
+    avc <- portanalytics::avc(ports, c(dateFrom, dateBased), ts = F) 
+    avc <- avc[, .(Port_Name = Item, AVC)]
+    target <- dcast(saaTarget, Port_Name ~ SAA_Class, value.var = "Target")
+    eqPos <- avc[target, on = "Port_Name"]
+    eqPos[, `:=`(
+      Dom = `Domestic listed equities` * AVC,
+      Overs = `Overseas listed equities` * AVC,
+      Total = `Listed equities` * AVC
+    )][, .(Port_Name, Dom, Overs, Total)]
+  })
+  eqAdj <- uglChg[pl, on = "Port_Name"][eqPos, on = "Port_Name"]
+  eqAdj[, `:=`(
+    EQ_Adj_Dom = (PL_Dom + UGL_Chg_Dom) / Dom,
+    EQ_Adj_Overs = (PL_Overs + UGL_Chg_Overs) / Overs,
+    EQ_Adj_Total = (PL_Dom + UGL_Chg_Dom + PL_Overs + UGL_Chg_Overs) / Total
+  )]
+  addRow <- eqAdj[, .(UGL_Chg_Dom = sum(UGL_Chg_Dom),
+                      UGL_Chg_Overs = sum(UGL_Chg_Overs),
+                      PL_Dom = sum(PL_Dom),
+                      PL_Overs = sum(PL_Overs),
+                      Dom = sum(Dom),
+                      Overs = sum(Overs),
+                      Total = sum(Total))]
+  addRow[, `:=`(
+    Port_Name = "Total",
+    EQ_Adj_Dom = (PL_Dom + UGL_Chg_Dom) / Dom,
+    EQ_Adj_Overs = (PL_Overs + UGL_Chg_Overs) / Overs,
+    EQ_Adj_Total = (PL_Dom + UGL_Chg_Dom + PL_Overs + UGL_Chg_Overs) / Total
+  )]
+  eqAdj <- rbindlist(list(eqAdj, addRow), use.names = TRUE)
+})
