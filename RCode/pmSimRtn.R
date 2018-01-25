@@ -32,6 +32,13 @@ drt <-
     bchmk = "000300.SH"
   )
 
+# param <- data.table(
+#   PTF = c("CNPC", "Par"),
+#   LOW =  c(0,  0),
+#   TGT =  c(4,  6),
+#   HIGH = c(10, 15),
+#   key = "PTF"
+# )
 param <- data.table(
   PTF = c("CNPC", "Par", "UL Increase", "UV Group", "UV Individual", "UL Stable",
           "Life", "Capital RMB", "UL Anyi", "UL Strategy", "UL Aggressive"),
@@ -43,13 +50,6 @@ param <- data.table(
 cashRtn <- 3 / 100
 mgtFee <- 1.5 / 100
 
-# param <- data.table(
-#   PTF = c("Par", "UL Increase", "UV Group", "UV Individual", "UL Stable"),
-#   LOW = c(0, 20, 0, 0, 0),
-#   TGT = c(7, 40, 5, 4, 10),
-#   HIGH = c(14, 60, 10, 8, 20),
-#   key = "PTF"
-# )
 allocL <- 20
 allocT <- 60
 allocH <- 95
@@ -65,17 +65,23 @@ res[, SIM_WT := {
   wt[wt < LOW] <- LOW[wt < LOW]
   wt[wt > HIGH] <- HIGH[wt > HIGH]
   
-  lowFlag <- (wt < LOW)
+  lowFlag <- (EQ_WT < TGT)
   wt[lowFlag] <- (allocT - allocL) / 
     (TGT[lowFlag] - LOW[lowFlag]) * 
     (wt[lowFlag] - LOW[lowFlag]) + allocL
-  highFlag <- (wt >= LOW)
-  wt[highFlag] <- allocH - (allocH - allocT) / 
-    (HIGH[highFlag] - TGT[highFlag]) * 
+  highFlag <- (EQ_WT >= TGT)
+  wt[highFlag] <- allocH - (allocH - allocT) /
+    (HIGH[highFlag] - TGT[highFlag]) *
     (HIGH[highFlag] - wt[highFlag])
-  
+  # 必须要把目标仓位加入到等比例变化的基准中，只用high和Low是不够的，至少第一点，要保证你在目标仓位的
+  # 时候对应过去那边也是在目标仓位。
+  # 然后高于和低于目标的时候二者各自计算比例，因为我们的目标处于low 和high当中的什么位置，
+  # 与你模拟过去的目标处于它那边的什么位置，大部分时候是不一样的，所以不能固定只看最高点往下，
+  # 应该高于目标的都只看高于目标的段，低于的只看低于的。
   wt
 }]
+
+
 res[, DCOUNT := as.integer(DATE - shift(DATE)), keyby = PTF]
 res[, SIM_BDRT := BDRT * allocT / 100 + cashRtn / 365 * DCOUNT * (1 - allocT / 100) ]
 res[, SIM_DRT := DRT * SIM_WT / 100 + cashRtn / 365 * DCOUNT * (1 - SIM_WT / 100) -
@@ -91,7 +97,8 @@ res[, DD := {
 # breakdown
 res[, `:=`(
   SEL = sel <- cumprod(1 + GCAMCPUB::na_fill(DRT - BDRT, 0)) - 1,
-  ALLOC =  alloc <- cumprod(GCAMCPUB::na_fill((SIM_WT - 50) / 100 * BDRT, 0) + 1) - 1,
+  # 这好像有问题，没乘以Wb:allocT
+  ALLOC =  alloc <- cumprod(GCAMCPUB::na_fill((SIM_WT - allocT) / 100 * BDRT, 0) + 1) - 1,
   OTHERS = EXCESS - sel - alloc
 ), keyby = PTF]
 
@@ -114,7 +121,7 @@ stats[, DDRATIO := - MEAN / MDD]
 print(stats)
 
 resCR <- dcast(res, DATE ~ PTF, value.var = "SIM_CRT")
-GCAMCPUB::write_open_xlsx(resCR)
+# GCAMCPUB::write_open_xlsx(resCR)
 
 
 
