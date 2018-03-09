@@ -3,11 +3,11 @@ library(data.table)
 library(GCAMCPUB)
 library(DBI)
 # 2015年之前境内境外SAA是不分的
-readFromLdc(c("201612", "201711"), 
+readFromLdc(c("201712", "201802"), 
             c("All cost based", "Third party"), 
             jyDateRange = NULL)
-dateBased <- as.Date("2017-11-23")
-dateFrom<- as.Date("2016-12-31")
+dateBased <- as.Date("2018-02-23")
+dateFrom<- as.Date("2017-12-31")
 classEQ <- c("Active fund", "Stock", "Index fund", "REITs", "IAMP-Stock", "Equity future")
 pos <- dataCenter$pos[Date %in% c(dateBased, dateFrom)]
 # find a way to replace the following info
@@ -85,16 +85,27 @@ port_order <- data.table(Port_Name = c("CNPC", "Par", "Life", "Capital RMB",
                                        "UV Individual", "UV Group", "Total"))
 # add if_FC to pos --------------------------------------------------------
 
+# lookthrough HK assets:
+# 990045.IB 港股安鑫回报  990078.OTC  港股安鑫回报2号 
+
+# 519139.OF	海富通沪港深
+# 004091.OF	博时沪港深价值优选A
+# 990025.IB	华泰-国寿富兰克林港股通精选一号
+
+# 170302.OTC  新华资产-港股通精选1号
+# 005228.OF	汇添富港股通专注成长
+
+amc_hk_code <- c("990045.IB", "990078.OTC")
+non_amc_hk_code <- c("990025.IB", "004091.OF", "519139.OF", "170302.OTC", "005228.OF")
 equityAlloc <- local({
   tmp <- copy(pos)[Date == dateBased]
   # mark HK Anxin & HuaTai & hugangshen fund to oversea assets; lookthrough 2 times
-  tmpAnxin <- lookThrough(lookThrough(tmp[Sec_Code == "990045.IB"]))
+  tmpAnxin <- lookThrough(lookThrough(tmp[Sec_Code %in% amc_hk_code]))
   tmpAnxin[, if_FC := 1]
   tmpAnxin <- portInfo[tmpAnxin, on = "HS_Port_Code"]
-  tmpExclAnxin <- lookThrough(lookThrough(tmp[Sec_Code != "990045.IB"]))
+  tmpExclAnxin <- lookThrough(lookThrough(tmp[!Sec_Code %in% amc_hk_code]))
   tmpExclAnxin <- portInfo[tmpExclAnxin, on = "HS_Port_Code"]
-  tmpExclAnxin[if_FC_HS_Port == TRUE | Sec_Code %in% c("990025.IB", "004091.OF", "519139.OF"),
-               if_FC := 1]
+  tmpExclAnxin[if_FC_HS_Port == TRUE | Sec_Code %in% non_amc_hk_code, if_FC := 1]
   tmpExclAnxin[, if_FC := GCAMCPUB::na_fill(if_FC, 0)]
   tmpPos <- rbindlist(list(tmpAnxin, tmpExclAnxin)) %>%
     attachHSPortInfo(c("Port_Name", "Port_Type"))
@@ -135,7 +146,7 @@ equityAdj <- local({
     posUGL <- copy(pos)[, .(Date, HS_Port_Code, Sec_Code, Sec_Name, UGL_LC, Class_L3)]
     posUGL <- portInfo[posUGL, on = "HS_Port_Code"]
     posUGL[if_FC_HS_Port == TRUE | 
-             Sec_Code %in% c("990045.IB", "990025.IB", "004091.OF", "519139.OF"),
+             Sec_Code %in% c(amc_hk_code, non_amc_hk_code),
            if_FC := 1]
     posUGL[, if_FC := GCAMCPUB::na_fill(if_FC, 0)]
     attachHSPortInfo(posUGL, c("Port_Name", "Port_Type"))
@@ -161,7 +172,7 @@ equityAdj <- local({
     pl <- dataCenter$pl[Date > dateFrom & Date <= dateBased]
     pl <- portInfo[pl, on = "HS_Port_Code"]
     pl[if_FC_HS_Port == TRUE | 
-         Sec_Code %in% c("990045.IB", "990025.IB", "004091.OF", "519139.OF"),
+         Sec_Code %in% c(amc_hk_code, non_amc_hk_code),
        if_FC := 1]
     pl[, if_FC := GCAMCPUB::na_fill(if_FC, 0)]
     attachHSPortInfo(pl, c("Port_Name", "Port_Type"))
@@ -232,7 +243,7 @@ equityAdj <- local({
     posUGL <- copy(pos)[, .(Date, HS_Port_Code, Sec_Code, Sec_Name, UGL_OC, Class_L3)]
     posUGL <- portInfo[posUGL, on = "HS_Port_Code"]
     posUGL[if_FC_HS_Port == TRUE | 
-             Sec_Code %in% c("990045.IB", "990025.IB", "004091.OF", "519139.OF"),
+             Sec_Code %in% c(amc_hk_code, non_amc_hk_code),
            if_FC := 1]
     posUGL[, if_FC := GCAMCPUB::na_fill(if_FC, 0)]
     attachHSPortInfo(posUGL, c("Port_Name", "Port_Type"))
@@ -258,7 +269,7 @@ equityAdj <- local({
     pl <- dataCenter$pl[Date > dateFrom & Date <= dateBased]
     pl <- portInfo[pl, on = "HS_Port_Code"]
     pl[if_FC_HS_Port == TRUE | 
-         Sec_Code %in% c("990045.IB", "990025.IB", "004091.OF", "519139.OF"),
+         Sec_Code %in% c(amc_hk_code, non_amc_hk_code),
        if_FC := 1]
     pl[, if_FC := GCAMCPUB::na_fill(if_FC, 0)]
     attachHSPortInfo(pl, c("Port_Name", "Port_Type"))

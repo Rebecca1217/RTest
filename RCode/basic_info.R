@@ -32,3 +32,10 @@ ULMatchTable = data.table(
   setnames(c("PortName", "ULCode", "ULName"))
 
 #add a new line
+
+
+
+
+
+coreInfo$read("SAAInfo")
+coreInfo$read("ClassInfo") # PortInfo, HSPortInfo, ClassInfo，但是没有Class_L3和SAA_CL1的关系，还是得从SQL读
