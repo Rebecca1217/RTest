@@ -3,10 +3,10 @@ library(data.table)
 library(GCAMCPUB)
 library(DBI)
 # 2015年之前境内境外SAA是不分的
-readFromLdc(c("201712", "201802"), 
+readFromLdc(c("201712", "201803"), 
             c("All cost based", "Third party"), 
             jyDateRange = NULL)
-dateBased <- as.Date("2018-02-23")
+dateBased <- as.Date("2018-03-13")
 dateFrom<- as.Date("2017-12-31")
 classEQ <- c("Active fund", "Stock", "Index fund", "REITs", "IAMP-Stock", "Equity future")
 pos <- dataCenter$pos[Date %in% c(dateBased, dateFrom)]
@@ -44,7 +44,7 @@ alloc <- pos[Port_Type %in% c("Cost based", "Cost based FC") & Date == dateBased
              .(AV_Book_LC = sum(AV_Book_LC)), 
              by = .(Port_Name, New_Class)]
 allocWeight <- local({
-  tmp <- dcast(alloc, New_Class ~ Port_Name, fun = sum, value.var = 'AV_Book_LC')
+  tmp <- data.table::dcast(alloc, New_Class ~ Port_Name, fun = sum, value.var = 'AV_Book_LC')
   tmp[, `:=`(
     CNPC_W = CNPC / sum(CNPC),
     `CNPC-UV_W` = `CNPC-UV` / sum(`CNPC-UV`), 
@@ -76,8 +76,6 @@ ytm <- local({
   )]
   tmp[, .(New_Class, CNPC, Par, Life, Capital_RMB, UV_Group, UV_Individual, `Capital_FX`, CNPC_UV)]
 })
-
-
 
 # Equity Update -----------------------------------------------------------
 
@@ -159,7 +157,7 @@ equityAdj <- local({
     uglFrom <- posUGL[Date == dateFrom, 
                       .(UGL_End = sum(UGL_LC)),
                       .(Port_Name, if_FC, Date)] %>%
-      dcast(Port_Name + Date ~ if_FC, fun = sum, value.var = "UGL_End") %>%
+      data.table::dcast(Port_Name + Date ~ if_FC, fun = sum, value.var = "UGL_End") %>%
       setnames(c("Port_Name", "Date_From", "Dom_From", "Overs_From"))
     uglChg <- uglFrom[uglEnd, on = "Port_Name"]
     uglChg[, `:=`(
@@ -178,7 +176,7 @@ equityAdj <- local({
     attachHSPortInfo(pl, c("Port_Name", "Port_Type"))
     pl <- pl[Port_Type  == "Cost based" & Class_L3 %in% classEQ]
     pl <- pl[, .(PL = sum(PL_LC)), .(Port_Name, if_FC)] %>%
-      dcast(Port_Name ~ if_FC, fun = sum, value.var = "PL") %>%
+      data.table::dcast(Port_Name ~ if_FC, fun = sum, value.var = "PL") %>%
       setnames(c("Port_Name", "PL_Dom", "PL_Overs"))
     pl
   })

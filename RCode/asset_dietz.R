@@ -48,8 +48,8 @@ class_name <- c("bond", "stock", "fund", "deposit", "debt_plan", "trust", "equit
 # fetch data --------------------------------------------------------------
 
 port <- paPorts(list("All cost based"), "All cost based")
-dateFrom <- as.Date("2017-12-31")
-dateTo <- as.Date("2018-01-31")
+dateFrom <- as.Date("2016-12-31")
+dateTo <- as.Date("2017-11-30")
 dates <- c(dateFrom, dateTo)
 readFromLdc(dates, "All cost based", jyDateRange = NULL)
 

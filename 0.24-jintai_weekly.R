@@ -105,7 +105,9 @@ cf_total <- (function(){
   # exclude money which is solely used for purcashing a trust
   cf_ext <- cf_ext[!Date %in% c(as.Date("2016-08-01"), 
                                 as.Date("2017-03-31"),
-                                as.Date("2017-04-25"))] 
+                                as.Date("2017-04-25"),
+                                as.Date("2018-03-16"),
+                                as.Date("2018-03-20"))] 
   print(cf_ext)
   # cf from coupon and maturity and sell feibiao
   cf_int1 <- coreQuery("trans", ports = ports, dates = c(date_from, date_to))$trans[
@@ -124,12 +126,24 @@ cf_total <- (function(){
     cf_ext_feibiao <- cf_ext[!Notes %in% c("收到委托投资款", "银行存款提取")]
     cf_ext_feibiao <- rbindlist(list(cf_ext_feibiao, 
                                      cf_ext[Date %in% c(as.Date("2017-03-31"),
-                                                        as.Date("2017-04-25"))]))
+                                                        as.Date("2017-04-25"),
+                                                        as.Date("2018-03-16"),
+                                                        as.Date("2018-03-20"))]))
     all(-(cf_int2$CF_LC) %in% cf_ext_feibiao$CF_LC)
+    # @2018.03.22, money buying feibiao coming from both external and quanweituo sell IAMP-FI-NAV
   })
   if(!check_cf) {
+    cf_ext <- coreQuery("cfExt", ports = ports, dates = c(date_from, date_to))$cfExt
+    cf_ext_feibiao <- cf_ext[!Notes %in% c("收到委托投资款", "银行存款提取")]
+    cf_ext_feibiao <- rbindlist(list(cf_ext_feibiao, 
+                                     cf_ext[Date %in% c(as.Date("2017-03-31"),
+                                                        as.Date("2017-04-25"),
+                                                        as.Date("2018-03-16"),
+                                                        as.Date("2018-03-20"))]))
     cf_int2 <- cf_int2[!-CF_LC %in% cf_ext_feibiao$CF_LC, 
                        .(Date, Sec_Name, Trans_Type, CF_LC)]
+    # cf_int2[Date == "2018-03-22" & Sec_Name == "光大信托保诚3号信托计划",
+    #         CF_LC := CF_LC + 6e07]
   } else {
     cf_int2 <- cf_int2[Sec_Name == "empty table"]
   }
@@ -196,7 +210,7 @@ stock_rtn_tw <- assetRtn(ports, dates, "Stock", "Time weighted",
 stock_rtn_dietz <- assetRtn(ports, dates, "Stock", "Dietz",
                          bchmk = "000300.SH")[Date_To == date_tgt]
 bond_rtn <- assetRtn(ports, dates, "Corporate bond", "Dietz", 
-                     bchmk = "057.CS")[Date_To == date_tgt]
+                     bchmk = "CBA00201.CS")[Date_To == date_tgt]
 
 # output ------------------------------------------------------------------
 

@@ -2,12 +2,12 @@ library(portanalytics)
 library(GCAMCPUB)
 library(data.table)
 
-readFromLdc(c("201709", "201802"), "All cost based", jyDateRange = NULL)
+readFromLdc(c("201612", "201712"), "All cost based", jyDateRange = NULL)
 
 # Note: you can't use the class_relationship key by Class_L3, because bond and stock conatins
 # both domestic and overseas. You have to dive into the underlying pos for SAA proportion.
 
-tgt_date <- as.Date("2017-09-30")
+tgt_date <- as.Date("2016-12-31")
 # exclude Capital FX
 # saa_alloc <-  astAlloc(paPorts(list(c("CNPC", "Par", "Life", "Capital RMB", "UV Individual", "UV Group")
 #                                    ), "Cost based"),
