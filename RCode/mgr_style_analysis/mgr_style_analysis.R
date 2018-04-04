@@ -6,6 +6,7 @@
 library(portanalytics)
 library(GCAMCPUB)
 library(data.table)
+library(ggplot2)
 
 # data prepare ------------------------------------------------------------
 
@@ -95,7 +96,7 @@ cast_tor <- dcast(turn_over_rate, formula = Manager~Year, fun = sum, value.var =
 
 stock_industry <- eq_pos[Date == date_current, .(Manager, Date, Sec_Code, AV_Mix_LC,
                                                  Sec_Name, SW_Sector1, SW_Sector2)]
-
+GCAMCPUB::start_windr()
 industry_dom <- local({
   
   indus_dom <- stock_industry[
@@ -195,7 +196,7 @@ sw_ts <- local({
   
   sw_ts_top
 })
-p <- ggplot(sw_ts_top[Manager != "混合产品"], aes(x = Date), size = 10) + 
+p <- ggplot(sw_ts[Manager != "混合产品"], aes(x = Date), size = 10) + 
   geom_tile(aes(y = Manager, fill = Ratio)) + 
   geom_text_tan(aes(y = Manager, label = SW_Sector1), size = 4.5) + 
   scale_fill_continuous(low = excel_colors$yellow, 
@@ -205,14 +206,25 @@ p <- ggplot(sw_ts_top[Manager != "混合产品"], aes(x = Date), size = 10) +
   theme(axis.text.y = element_text(size = 14))
 plot(p)
 
-cast_sw_ts_top <- dcast(sw_ts_top, Manager~Date, value.var = "Label")
+cast_sw_ts_top <- dcast(sw_ts, Manager~Date, value.var = "Label")
 
 # Style: Market Cap Exposure, growth/value --------------------------------
 
 
 score_res <- data.table()
 mgr <- unique(mgr_info$Manager)
+# only A-share managers
 mgr <- mgr[! mgr %in% c("混合产品", "NA", "钟凯锋", "陆羽", "黄轩")]
+
+style_input <- (function(){
+  res <- eq_pos[, .(Date, Sec_Code, Manager, AV_Mix_LC)] %>% 
+    setnames(c("DATE", "STOCKINNERCODE", "INNERCODE", "AV_Mix_LC"))
+  res <- res[str_right(STOCKINNERCODE, 2) %in% c("SZ", "SH")]
+  res[, STOCKINNERCODE := secumain[J(stringr::str_sub(res$STOCKINNERCODE, 1, 6), .(INNERCODE))]]
+  res[, NORMWEIGHT := AV_Mix_LC / sum(AV_Mix_LC), by = .(Date, Manager)]
+  res[, .(DATE, STOCKINNERCODE, INNERCODE, NORMWEIGHT)]
+})()
+  
 
 for (i in seq_along(mgr)) {
   style_mgr <- eq_pos[Manager == mgr[i] & Class_L3 == "Stock" & Date == date_current &
