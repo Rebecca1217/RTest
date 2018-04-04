@@ -3,10 +3,12 @@
 
 # pkgs --------------------------------------------------------------------
 
-library(portanalytics)
-library(GCAMCPUB)
-library(data.table)
-library(ggplot2)
+suppressPackageStartupMessages({
+  library(portanalytics)
+  library(GCAMCPUB)
+  library(data.table)
+  library(ggplot2)
+})
 
 # data prepare ------------------------------------------------------------
 
@@ -22,37 +24,39 @@ readFromLdc(c("201701", "201803"), ports = ptfs, jyDateRange = NULL,
 
 date_current <- max(dataCenter$pos$Date)
 date_start <- f_date_begin(date_current, "year")
+from_to <- from_to(date_start, date_current)
 
 class_info <- coreInfo$read("ClassInfo")[, .(Class_L3, Class_L1)]
 eq_class <- class_info[Class_L1 == "Equity"]$Class_L3
 
-db_mo <- activate_conn("db_mo")
-sql <- "Select Date, Port_Name, Stock_Sele_Mgr as Manager from
-PortMgt_equity_control_mgr"
-mgr_info <- sql2dt(db_mo, sql)
-mgr_info[, Date := to_date(Date)]
+mgr_info <- local({
+  db_mo <- activate_conn("db_mo", auto_disconnect = TRUE)
+  sql <- "Select Date, Port_Name, Stock_Sele_Mgr as Manager from
+  PortMgt_equity_control_mgr"
+  res <- sql2dt(db_mo, sql)
+  res[, Date := to_date(Date)]
+  res
+})
 
-eq_pos <- dataCenter$pos[Class_L3 %in% eq_class]
-attachHSPortInfo(eq_pos, "Port_Name")
+# stock pos & trans
+eq_pos <- local({
+  res <- dataCenter$pos[Class_L3 %in% eq_class] %>%
+    attachHSPortInfo("Port_Name")
+  res <- mgr_info[res, on = c("Port_Name", "Date"), roll = TRUE]
+  res <- res[(! is.na(Manager)) & Manager != "NA" & Class_L3 == "Stock"]
+  res[, Year := year(Date)]
+  res %>% setkey(Date, Manager)
+})
 
-eq_trans <- dataCenter$trans[Class_L3 %in% eq_class]
-attachHSPortInfo(eq_trans, "Port_Name")
+eq_trans <- local({
+  res <- dataCenter$trans[Class_L3 %in% eq_class] %>%
+    attachHSPortInfo("Port_Name")
+  res <- mgr_info[res, on = c("Port_Name", "Date"), roll = TRUE]
+  res <- res[(! is.na(Manager)) & Manager != "NA" & Class_L3 == "Stock"]
+  res[, Year := year(Date)]
+  res %>% setkey(Date, Manager)
+})
 
-# not sure if pl will be used 
-# eq_pl <- dataCenter$pl[Class_L3 %in% eq_class]
-# attachHSPortInfo(eq_pl, "Port_Name")
-
-eq_pos <- mgr_info[eq_pos, on = c("Port_Name", "Date"), roll = TRUE]
-eq_pos <- eq_pos[(! is.na(Manager)) & Manager != "NA"]
-eq_pos[, Year := year(Date)]
-
-eq_trans <- mgr_info[eq_trans, on = c("Port_Name", "Date"), roll = TRUE]
-eq_trans <- eq_trans[(! is.na(Manager)) & Manager != "NA"]
-eq_trans[, Year := year(Date)]
-
-#select stock only
-eq_pos <- eq_pos[Class_L3 == "Stock"]
-eq_trans <- eq_trans[Class_L3 == "Stock"]
 # turn over rate ----------------------------------------------------------
 
 # min(buy, sell) / avg(AV_Book_LC)
@@ -177,106 +181,28 @@ sw_combine_perf <- local({
 
 # sector rotation time series
 
-sw_ts <- eq_pos[stringr::str_sub(Sec_Code, stringr::str_length(Sec_Code) - 1, -1) != "HK",
-                .(Date, Manager, Sec_Code, Sec_Name, SW_Sector1, SW_Sector2,
-                    AV_Mix_LC, Quantity, UGL_LC)]
-sql <- "Select Date from CORE_Data_Dates where if_Month_End = 1
-and Date > '{{datefrom}}' and Date <= '{{dateto}}'"
-sql <- infuser::infuse(sql, datefrom = min(eq_pos$Date), dateto = date_current)
-dateseq <- sql2dt(db_mo, sql)
-dateseq[, Date := to_date(Date)]
-sw_ts <- local({
-  
-  sw_ts_ratio <- sw_ts[, .(AV = sum(AV_Mix_LC)), by = .(Date, Manager, SW_Sector1)]
-  sw_ts_ratio[, Ratio := AV / sum(AV), by = .(Date, Manager)]
-  setorder(sw_ts_ratio, Date, Manager, -Ratio)
-  sw_ts_top <- sw_ts_ratio[, .SD[1], by = .(Date, Manager)]  
-  sw_ts_top <- sw_ts_top[Date %in% dateseq$Date]
-  sw_ts_top[, Label := paste0(SW_Sector1, f_fmt_pct(Ratio))]
-  
-  sw_ts_top
-})
-p <- ggplot(sw_ts[Manager != "混合产品"], aes(x = Date), size = 10) + 
-  geom_tile(aes(y = Manager, fill = Ratio)) + 
-  geom_text_tan(aes(y = Manager, label = SW_Sector1), size = 4.5) + 
-  scale_fill_continuous(low = excel_colors$yellow, 
-                        high = excel_colors$red, 
-                        na.value = "lightgrey",
-                        guide = "legend") +
-  theme(axis.text.y = element_text(size = 14))
-plot(p)
-
-cast_sw_ts_top <- dcast(sw_ts, Manager~Date, value.var = "Label")
-
-# Style: Market Cap Exposure, growth/value --------------------------------
-
-
-score_res <- data.table()
-mgr <- unique(mgr_info$Manager)
-# only A-share managers
-mgr <- mgr[! mgr %in% c("混合产品", "NA", "钟凯锋", "陆羽", "黄轩")]
-
-style_input <- (function(){
-  res <- eq_pos[, .(Date, Sec_Code, Manager, AV_Mix_LC)] %>% 
-    setnames(c("DATE", "STOCKINNERCODE", "INNERCODE", "AV_Mix_LC"))
-  res <- res[str_right(STOCKINNERCODE, 2) %in% c("SZ", "SH")]
-  res[, STOCKINNERCODE := secumain[J(stringr::str_sub(res$STOCKINNERCODE, 1, 6), .(INNERCODE))]]
-  res[, NORMWEIGHT := AV_Mix_LC / sum(AV_Mix_LC), by = .(Date, Manager)]
-  res[, .(DATE, STOCKINNERCODE, INNERCODE, NORMWEIGHT)]
-})()
-  
-
-for (i in seq_along(mgr)) {
-  style_mgr <- eq_pos[Manager == mgr[i] & Class_L3 == "Stock" & Date == date_current &
-                        str_sub(Sec_Code, str_length(Sec_Code) - 1, str_length(Sec_Code)) != "HK", 
-                      .(Date, Port_Name, Sec_Code, Sec_Name, 
-                        Quantity, AV_Mix_LC)]
-  
-  style_mgr <- style_mgr[, .(Quantity = sum(Quantity), AV_Mix_LC = sum(AV_Mix_LC)),
-                         by = .(Date, Port_Name, Sec_Code, Sec_Name)]
-  
-  print(c(nrow(style_mgr), mgr[i]))
-  res <- style_mgr[, Sec_Code := unlist(purrr::map(as.list(Sec_Code), function(x) {
-    first_pos <- 1
-    end_pos <- 6
-    substr(x, first_pos, end_pos)
-  }))]
-  
-  res[, c("DATE", "INNER_CODE") := list(
-    Date,
-    secumain[J(Sec_Code)]$INNERCODE
-  )]
-  
-  res[, WEIGHT := AV_Mix_LC / sum(AV_Mix_LC), by = DATE]
-  
-  scores <- fund_style_depict(res)
-  scores[, Manager := mgr[i]]
-  score_res <- rbind(score_res, scores)
-}
-
-
-
-
-
-# stock concentration -----------------------------------------------------
-# 
-# stock_conc <- local({
+# sw_ts <- eq_pos[stringr::str_sub(Sec_Code, stringr::str_length(Sec_Code) - 1, -1) != "HK",
+#                 .(Date, Manager, Sec_Code, Sec_Name, SW_Sector1, SW_Sector2,
+#                     AV_Mix_LC, Quantity, UGL_LC)]
+# sql <- "Select Date from CORE_Data_Dates where if_Month_End = 1
+# and Date > '{{datefrom}}' and Date <= '{{dateto}}'"
+# sql <- infuser::infuse(sql, datefrom = min(eq_pos$Date), dateto = date_current)
+# dateseq <- sql2dt(db_mo, sql)
+# dateseq[, Date := to_date(Date)]
+# sw_ts <- local({
 #   
-#   stock_conc <- eq_pos[Class_L3 == "Stock" & Date == date_current,
-#                        .(Manager, Port_Name, Sec_Code, Sec_Name, 
-#                          Quantity, AV_Book_LC, AV_Mix_LC, UGL_LC)]
-#   tmp <- stock_conc[, .(AV = sum(AV_Mix_LC)), by = .(Manager, Sec_Code, Sec_Name)]
-#   tmp[, Ratio := AV / sum(AV), by = .(Manager)]
-#   setorder(tmp, Manager, -Ratio)
-#   tmp <- tmp[, .SD[1:3], by = .(Manager)]
-#   tmp[, Rank := c(1, 2, 3)]
+#   sw_ts_ratio <- sw_ts[, .(AV = sum(AV_Mix_LC)), by = .(Date, Manager, SW_Sector1)]
+#   sw_ts_ratio[, Ratio := AV / sum(AV), by = .(Date, Manager)]
+#   setorder(sw_ts_ratio, Date, Manager, -Ratio)
+#   sw_ts_top <- sw_ts_ratio[, .SD[1], by = .(Date, Manager)]  
+#   sw_ts_top <- sw_ts_top[Date %in% dateseq$Date]
+#   sw_ts_top[, Label := paste0(SW_Sector1, f_fmt_pct(Ratio))]
 #   
-#   tmp
+#   sw_ts_top
 # })
-# 
-# p <- ggplot(tmp[Manager != "混合产品"], aes(x = Rank), size = 10) + 
+# p <- ggplot(sw_ts[Manager != "混合产品"], aes(x = Date), size = 10) + 
 #   geom_tile(aes(y = Manager, fill = Ratio)) + 
-#   geom_text_tan(aes(y = Manager, label = Sec_Name), size = 4.5) + 
+#   geom_text_tan(aes(y = Manager, label = SW_Sector1), size = 4.5) + 
 #   scale_fill_continuous(low = excel_colors$yellow, 
 #                         high = excel_colors$red, 
 #                         na.value = "lightgrey",
@@ -284,10 +210,101 @@ for (i in seq_along(mgr)) {
 #   theme(axis.text.y = element_text(size = 14))
 # plot(p)
 # 
-# stock_conc[, `:=`(
-#   Label = paste0(Sec_Name, f_fmt_pct(Ratio))
-# )]
-# cast_stock_conc <- dcast(stock_conc, Manager~Rank, value.var = "Label")
+# cast_sw_ts_top <- dcast(sw_ts, Manager~Date, value.var = "Label")
+
+# Style: Market Cap Exposure, growth/value --------------------------------
+
+# only A-share managers
+mgr <- local({
+  res <- unique(mgr_info$Manager)
+  res[! res %in% c("混合产品", "NA", "钟凯锋", "陆羽", "黄轩")]
+})
+  
+
+style_input <- (function(){
+  secumain <- readDtRds("./external_data/style_analysis/secumain.rds") %>% setkey(SECUCODE)
+  res <- eq_pos[, .(Date, Sec_Code, Manager, AV_Mix_LC)] %>% 
+    setnames(c("DATE", "STOCKINNERCODE", "INNERCODE", "AV_Mix_LC"))
+  res <- res[str_right(STOCKINNERCODE, 2) %in% c("SZ", "SH")]
+  res[, STOCKINNERCODE := secumain[J(stringr::str_sub(res$STOCKINNERCODE, 1, 6)), .(INNERCODE)]]
+  res[, NORMWEIGHT := AV_Mix_LC / sum(AV_Mix_LC), by = .(DATE, INNERCODE)]
+  res[, .(DATE, STOCKINNERCODE, INNERCODE, NORMWEIGHT)]
+})()
+ 
+style_vars <- c("bbg_size", "bbg_liquidity", "bbg_value", "bbg_growth", "bbg_momentum", "barra_beta")
+style_expose <- c("size_expose", "liquidity_expose", "value_expose", "growth_expose", "momentum_expose", "beta_expose")
+
+# once for one port ts data
+f_style_expose <- function(dt) {
+  
+  stopifnot(all(c("STOCKINNERCODE", "DATE", "NORMWEIGHT", "INNERCODE") %in% names(dt)),
+            length(unique(dt$INNERCODE)) == 1)
+  
+  style_tbl <- readDtRds("./external_data/style_analysis/style_tbl.rds")
+  hs300_dt <- readDtRds("./external_data/style_analysis/hs300_dt.rds")
+  zz500_dt <- readDtRds("./external_data/style_analysis/zz500_dt.rds")
+  
+  style_dt <- copy(dt)
+  style_dt <- style_tbl[style_dt, on = c("STOCKINNERCODE", "DATE"), roll = Inf]
+  
+  style_dt[, c(style_expose, "WEIGHT_SQUARE") := purrr::map(.SD, function(x) {
+    sum(x * NORMWEIGHT, na.rm = T)
+  }), .SDcols = c(style_vars, "NORMWEIGHT"), by = DATE]
+  
+  expose_dt <- unique(style_dt[, c("DATE", style_expose), with = FALSE])
+  expose_dt <- cbind(data.table(INNERCODE = rep(unique(style_dt$INNERCODE), nrow(expose_dt))),
+                     expose_dt)
+  
+}
+
+style_res <- data.table()
+for(i in seq_along(mgr)) {
+  dt <- style_input[INNERCODE == mgr[i]]
+  res <- f_style_expose(dt)
+  style_res <- rbind(style_res, res)
+}
+# NOT WORK##################################################################
+# f_style_expose <- function(dt, mgr) {
+# 
+#   
+#   dt <- dt[INNERCODE == mgr]
+#   
+#   stopifnot(all(c("STOCKINNERCODE", "DATE", "NORMWEIGHT", "INNERCODE") %in% names(dt)),
+#             length(unique(dt$INNERCODE)) == 1)
+#   
+#   style_tbl <- readDtRds("./external_data/style_analysis/style_tbl.rds")
+#   hs300_dt <- readDtRds("./external_data/style_analysis/hs300_dt.rds")
+#   zz500_dt <- readDtRds("./external_data/style_analysis/zz500_dt.rds")
+#   
+#   style_dt <- copy(dt)
+#   style_dt <- style_tbl[style_dt, on = c("STOCKINNERCODE", "DATE"), roll = Inf]
+#   
+#   style_dt[, c(style_expose, "WEIGHT_SQUARE") := purrr::map(.SD, function(x) {
+#     psum(x * NORMWEIGHT, na.rm = T)
+#   }), .SDcols = c(style_vars, "NORMWEIGHT"), by = DATE]
+#   
+#   expose_dt <- unique(style_dt[, c("DATE", style_expose), with = FALSE])
+#   expose_dt <- cbind(data.table(INNERCODE = rep(unique(style_dt$INNERCODE), nrow(expose_dt))),
+#                      expose_dt)
+#   
+# }
+# test <- f_style_expose(style_input[INNERCODE == "周陆"], mgr = "周陆")
+# 
+# 
+# style_res <- style_input[, c("INNERCODE", "DATE", style_expose) := 
+#                            f_style_expose(.SD, INNERCODE), by = .(INNERCODE)]
+
+# stock concentration -----------------------------------------------------
+
+
+f <- function(dt, mgr){
+  t <- mgr
+  dt <- dt[Mgr == t]
+  dt <- dt[, CC := AA + BB, by = .(Date)]
+  dt[, Mgr := mgr]
+}
+
+
 
 
 stock_conc <- local({
